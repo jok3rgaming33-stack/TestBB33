@@ -9,7 +9,7 @@ import Image from "next/image"
 const NAV_ITEMS = [
   { label: "Nos produits", action: "featured" as const },
   { label: "Livraison/Meet-up", action: "delivery" as const },
-  { label: "Mes commandes", action: "orders" as const },
+  { label: "Messagerie", action: "orders" as const },
   { label: "Espace fidélité", action: "loyalty" as const },
 ]
 
@@ -152,24 +152,10 @@ export function Navbar({
             {isAdmin && (
               <a
                 href="/admin"
-                className="mt-1 flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-semibold uppercase tracking-wide text-accent-foreground"
+                className="mt-1 flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground"
               >
-                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                 Panel Admin
               </a>
-            )}
-            {isLoggedIn && !isAdmin && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false)
-                  onLogout?.()
-                }}
-                className="mt-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              >
-                <LogOut className="h-4 w-4" aria-hidden="true" />
-                Déconnexion
-              </button>
             )}
           </div>
         </nav>

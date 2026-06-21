@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { X, ArrowLeft, Package, Send, Loader2 } from "lucide-react"
-import { getThreadsForToken, getThread, addMessage } from "@/app/actions/messaging"
+import { getThreadsForToken, getThread, addMessage, createGeneralInquiryThread } from "@/app/actions/messaging"
 import { statusMeta, isClosedStatus } from "@/lib/order-status"
 
 type UserData = { pseudo?: string; token?: string } | null
@@ -48,12 +48,11 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
   const [loadingThread, setLoadingThread] = useState(false)
   const [reply, setReply] = useState("")
   const [sending, setSending] = useState(false)
+  const [mainTab, setMainTab] = useState<"commandes" | "messagerie">("commandes")
 
-  // Suit la commande ouverte pour le rafraîchissement périodique des messages
   const selectedRef = useRef<number | null>(null)
   selectedRef.current = selected?.id ?? null
 
-  // Charge la liste des commandes du client à l'ouverture (par clé secrète)
   useEffect(() => {
     if (!isOpen || !token) return
     setLoadingList(true)
@@ -63,9 +62,6 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
       .finally(() => setLoadingList(false))
   }, [isOpen, token])
 
-  // Rafraîchissement en direct pendant que la modale est ouverte :
-  // - liste des commandes (nouveaux statuts)
-  // - messages du fil ouvert (réponses du vendeur)
   useEffect(() => {
     if (!isOpen || !token) return
     const interval = setInterval(async () => {
@@ -76,9 +72,7 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
           const data = await getThread(selectedRef.current)
           if (data) setMessages(data.messages as Message[])
         }
-      } catch {
-        // silencieux
-      }
+      } catch {}
     }, 8000)
     return () => clearInterval(interval)
   }, [isOpen, token])
@@ -123,10 +117,9 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
       className="fixed inset-0 z-[100] flex items-center justify-center bg-background/90 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Mes commandes"
+      aria-label="Messagerie et suivi des commandes"
     >
       <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-3xl border border-accent/40 bg-card">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border p-6">
           <div className="flex items-center gap-3">
             {selected && (
@@ -142,7 +135,7 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
                 <ArrowLeft className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
-            <h2 className="text-xl font-bold">{selected ? `Commande #${selected.id}` : "Mes commandes"}</h2>
+            <h2 className="text-xl font-bold">{selected ? `Conversation #${selected.id}` : "Messagerie & Commandes"}</h2>
           </div>
           <button
             type="button"
@@ -154,15 +147,31 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
           </button>
         </div>
 
-        {/* Liste des commandes */}
         {!selected && (
           <div className="flex flex-1 flex-col overflow-hidden">
-            {/* Onglets */}
+            <div className="px-6 pt-4">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!token) return
+                  const res = await createGeneralInquiryThread(token)
+                  if (res.ok && res.id) {
+                    const list = await getThreadsForToken(token)
+                    const t = list.find((th: any) => th.id === res.id)
+                    if (t) openThread(t as Thread)
+                  }
+                }}
+                className="w-full rounded-2xl border border-accent/60 bg-accent/10 px-4 py-3 text-sm font-semibold text-accent transition-colors hover:bg-accent/20 flex items-center justify-center gap-2"
+              >
+                💬 Contacter le vendeur directement (sans commande)
+              </button>
+            </div>
+
             <div className="flex gap-1 border-b border-border px-6 pt-4">
               {(
                 [
-                  { key: "active" as const, label: "En cours" },
-                  { key: "past" as const, label: "Mes commandes passées" },
+                  { key: "active" as const, label: "Mes commandes" },
+                  { key: "past" as const, label: "Commandes passées" },
                 ]
               ).map((t) => (
                 <button
@@ -194,7 +203,7 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
                       <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
                         <Package className="h-10 w-10" aria-hidden="true" />
                         <p className="text-sm">
-                          {tab === "past" ? "Aucune commande passée." : "Aucune commande en cours."}
+                          {tab === "past" ? "Aucune commande passée." : "Aucune commande en cours pour le moment."}
                         </p>
                       </div>
                     )
@@ -231,7 +240,6 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
           </div>
         )}
 
-        {/* Détail d'un fil */}
         {selected && (
           <>
             <div className="flex-1 overflow-y-auto p-6">
@@ -263,7 +271,6 @@ export function MyOrdersModal({ isOpen, onClose, userData }: MyOrdersModalProps)
               )}
             </div>
 
-            {/* Zone de réponse */}
             <div className="border-t border-border p-4">
               <div className="flex items-end gap-2">
                 <textarea

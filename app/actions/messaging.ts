@@ -1,7 +1,7 @@
 "use server"
 
 import { db } from "@/lib/db"
-import { orderThreads, threadMessages } from "@/lib/db/schema"
+import { orderThreads, threadMessages, users } from "@/lib/db/schema"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 import { normalizeStatus, statusMeta } from "@/lib/order-status"
@@ -239,4 +239,94 @@ export async function countNewThreads() {
     .from(orderThreads)
     .where(and(eq(orderThreads.status, "en_attente")))
   return row?.c ?? 0
+}
+
+// Crée un fil de discussion générale / contact direct (sans commande)
+export async function createGeneralInquiryThread(customerToken: string) {
+  const token = customerToken?.trim()
+  if (!token) return { ok: false as const, error: "Token client manquant" }
+
+  // Lookup pseudo si l'utilisateur existe
+  let customerName = "Client"
+  try {
+    const [u] = await db
+      .select({ pseudo: users.pseudo })
+      .from(users)
+      .where(eq(users.token, token))
+      .limit(1)
+    if (u?.pseudo) customerName = u.pseudo
+  } catch {}
+
+  const [thread] = await db
+    .insert(orderThreads)
+    .values({
+      customerName,
+      customerToken: token,
+      summary: "Discussion générale / Contact direct",
+      total: 0,
+      fulfillment: "livraison",
+      status: "en_attente",
+    })
+    .returning()
+
+  // Notifie le vendeur
+  await notifyVendor({
+    title: "Nouvelle discussion",
+    body: `${customerName} a ouvert une discussion générale (#${thread.id}).`,
+    url: "/admin",
+    tag: `inquiry-${thread.id}`,
+  })
+
+  revalidatePath("/messagerie")
+  revalidatePath("/admin")
+  return { ok: true as const, id: thread.id }
+}
+
+// Démarre une discussion générale depuis l'admin vers un client spécifique
+export async function startGeneralConversationWithCustomer(customerToken: string, initialMessage: string) {
+  const token = customerToken?.trim()
+  const body = initialMessage?.trim()
+  if (!token || !body) return { ok: false as const, error: "Token ou message manquant" }
+
+  // Lookup pseudo
+  let customerName = "Client"
+  try {
+    const [u] = await db
+      .select({ pseudo: users.pseudo })
+      .from(users)
+      .where(eq(users.token, token))
+      .limit(1)
+    if (u?.pseudo) customerName = u.pseudo
+  } catch {}
+
+  const [thread] = await db
+    .insert(orderThreads)
+    .values({
+      customerName,
+      customerToken: token,
+      summary: "Discussion initiée par le vendeur",
+      total: 0,
+      fulfillment: "livraison",
+      status: "en_attente",
+    })
+    .returning()
+
+  // Ajoute le premier message du vendeur
+  await db.insert(threadMessages).values({
+    threadId: thread.id,
+    sender: "vendeur",
+    body,
+  })
+
+  // Notifie le client
+  await notifyCustomer(token, {
+    title: "Nouveau message du vendeur",
+    body: body.length > 80 ? `${body.slice(0, 77)}…` : body,
+    url: "/",
+    tag: `thread-${thread.id}`,
+  })
+
+  revalidatePath("/admin")
+  revalidatePath("/messagerie")
+  return { ok: true as const, id: thread.id }
 }
